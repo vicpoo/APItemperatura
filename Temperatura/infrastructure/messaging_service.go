@@ -1,6 +1,8 @@
+// messaging_service.go
 package infrastructure
 
 import (
+	"encoding/json"
 	"log"
 
 	"github.com/streadway/amqp"
@@ -13,6 +15,9 @@ type MessagingService struct {
 }
 
 func NewMessagingService(hub *Hub) *MessagingService {
+	// Note: Port 1883 is for MQTT, RabbitMQ typically uses 5672 for AMQP
+	// If you really need to use 1883, you might need an MQTT plugin in RabbitMQ
+	// or use an MQTT client library instead of AMQP
 	conn, err := amqp.Dial("amqp://reyhades:reyhades@44.223.218.9:5672/")
 	if err != nil {
 		log.Fatalf("Failed to connect to RabbitMQ: %s", err)
@@ -25,15 +30,15 @@ func NewMessagingService(hub *Hub) *MessagingService {
 		return nil
 	}
 
-	// Declarar el intercambio
+	// Declare the exchange (if it doesn't exist)
 	err = ch.ExchangeDeclare(
-		"sensor_data", // nombre del intercambio
-		"topic",       // tipo de intercambio
-		true,          // durable
-		false,         // auto-deleted
-		false,         // internal
-		false,         // no-wait
-		nil,           // arguments
+		"amq.topic", // exchange name
+		"topic",     // type
+		true,        // durable
+		false,       // auto-deleted
+		false,       // internal
+		false,       // no-wait
+		nil,         // arguments
 	)
 	if err != nil {
 		log.Fatalf("Failed to declare an exchange: %s", err)
@@ -48,23 +53,24 @@ func NewMessagingService(hub *Hub) *MessagingService {
 }
 
 func (ms *MessagingService) ConsumeTemperatureMessages() error {
+	// Declare the queue (if it doesn't exist)
 	q, err := ms.ch.QueueDeclare(
-		"temperature_queue", // name
-		true,                // durable
-		false,               // delete when unused
-		false,               // exclusive
-		false,               // no-wait
-		nil,                 // arguments
+		"esp32temperature", // queue name
+		true,               // durable
+		false,              // delete when unused
+		false,              // exclusive
+		false,              // no-wait
+		nil,                // arguments
 	)
 	if err != nil {
 		return err
 	}
 
-	// Vincular la cola al exchange con el routing key correcto
+	// Bind the queue to the exchange with the correct routing key
 	err = ms.ch.QueueBind(
-		q.Name,               // queue name
-		"sensor.temperature", // routing key
-		"sensor_data",        // exchange
+		q.Name,             // queue name
+		"sp32.temperature", // routing key
+		"amq.topic",        // exchange
 		false,
 		nil,
 	)
@@ -75,7 +81,7 @@ func (ms *MessagingService) ConsumeTemperatureMessages() error {
 	msgs, err := ms.ch.Consume(
 		q.Name, // queue
 		"",     // consumer
-		false,  // auto-ack (false para confirmar manualmente)
+		false,  // auto-ack (false for manual acknowledgment)
 		false,  // exclusive
 		false,  // no-local
 		false,  // no-wait
@@ -87,12 +93,22 @@ func (ms *MessagingService) ConsumeTemperatureMessages() error {
 
 	go func() {
 		for msg := range msgs {
-			log.Printf("Received a temperature message: %s", msg.Body)
+			// Log the raw message
+			log.Printf("Received raw message: %s", string(msg.Body))
 
-			// Enviar el mensaje directamente a todos los clientes WebSocket
+			// Parse the JSON to make it more readable
+			var data map[string]interface{}
+			if err := json.Unmarshal(msg.Body, &data); err == nil {
+				log.Printf("Parsed temperature data: %+v", data)
+			} else {
+				log.Printf("Error parsing JSON: %v", err)
+			}
+
+			// Send the message to all WebSocket clients
 			ms.hub.broadcast <- msg.Body
 
-			msg.Ack(false) // Confirmar procesamiento exitoso
+			// Acknowledge successful processing
+			msg.Ack(false)
 		}
 	}()
 
@@ -100,6 +116,10 @@ func (ms *MessagingService) ConsumeTemperatureMessages() error {
 }
 
 func (ms *MessagingService) Close() {
-	ms.ch.Close()
-	ms.conn.Close()
+	if ms.ch != nil {
+		ms.ch.Close()
+	}
+	if ms.conn != nil {
+		ms.conn.Close()
+	}
 }

@@ -19,7 +19,9 @@ func main() {
 	hub := infrastructure.NewHub()
 	go hub.Run()
 
+	// Configurar servicio de mensajería
 	messagingService := infrastructure.NewMessagingService(hub)
+	defer messagingService.Close()
 
 	// Configurar rutas
 	infrastructure.SetupRoutes(r, hub)
@@ -28,7 +30,6 @@ func main() {
 	if err := messagingService.ConsumeTemperatureMessages(); err != nil {
 		log.Fatalf("Failed to start RabbitMQ consumer: %v", err)
 	}
-	defer messagingService.Close()
 
 	// Manejar señales para apagado limpio
 	sigChan := make(chan os.Signal, 1)

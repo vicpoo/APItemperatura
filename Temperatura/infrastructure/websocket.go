@@ -1,3 +1,4 @@
+// websocket.go
 package infrastructure
 
 import (
@@ -12,7 +13,6 @@ var upgrader = websocket.Upgrader{
 	WriteBufferSize: 1024,
 }
 
-// Hub mantiene las conexiones WebSocket activas
 type Hub struct {
 	clients    map[*websocket.Conn]bool
 	broadcast  chan []byte
@@ -34,12 +34,15 @@ func (h *Hub) Run() {
 		select {
 		case client := <-h.register:
 			h.clients[client] = true
+			log.Printf("New WebSocket client connected. Total clients: %d", len(h.clients))
 		case client := <-h.unregister:
 			if _, ok := h.clients[client]; ok {
 				delete(h.clients, client)
 				client.Close()
+				log.Printf("WebSocket client disconnected. Total clients: %d", len(h.clients))
 			}
 		case message := <-h.broadcast:
+			log.Printf("Broadcasting message to %d clients: %s", len(h.clients), string(message))
 			for client := range h.clients {
 				if err := client.WriteMessage(websocket.TextMessage, message); err != nil {
 					log.Printf("WebSocket write error: %v", err)
