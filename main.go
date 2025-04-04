@@ -37,12 +37,12 @@ func main() {
 
 	// Iniciar servidor en una goroutine
 	go func() {
-		if err := r.Run(":8000"); err != nil {
+		if err := r.Run(":8001"); err != nil {
 			log.Fatalf("Failed to start server: %v", err)
 		}
 	}()
 
-	log.Println("Server started on port 8000")
+	log.Println("Server started on port 8001")
 	log.Println("Temperature consumer started")
 
 	// Esperar señal de apagado
