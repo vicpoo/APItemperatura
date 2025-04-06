@@ -3,6 +3,7 @@ package infrastructure
 
 import (
 	"log"
+	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -11,6 +12,10 @@ import (
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
+	CheckOrigin: func(r *http.Request) bool {
+		// Permite conexiones desde cualquier origen (en producción deberías ser más restrictivo)
+		return true
+	},
 }
 
 type Hub struct {
@@ -22,7 +27,7 @@ type Hub struct {
 
 func NewHub() *Hub {
 	return &Hub{
-		broadcast:  make(chan []byte),
+		broadcast:  make(chan []byte, 256), // Buffer mejorado del primer código
 		register:   make(chan *websocket.Conn),
 		unregister: make(chan *websocket.Conn),
 		clients:    make(map[*websocket.Conn]bool),
@@ -42,7 +47,7 @@ func (h *Hub) Run() {
 				log.Printf("WebSocket client disconnected. Total clients: %d", len(h.clients))
 			}
 		case message := <-h.broadcast:
-			log.Printf("Broadcasting message to %d clients: %s", len(h.clients), string(message))
+			log.Printf("Broadcasting message to %d clients: %s", len(h.clients), string(message)) // Log añadido del primer código
 			for client := range h.clients {
 				if err := client.WriteMessage(websocket.TextMessage, message); err != nil {
 					log.Printf("WebSocket write error: %v", err)
@@ -67,7 +72,7 @@ func (h *Hub) HandleWebSocket(c *gin.Context) {
 		h.unregister <- conn
 	}()
 
-	// Mantener la conexión abierta
+	// Mantener la conexión abierta (mejor comentario del primer código)
 	for {
 		if _, _, err := conn.ReadMessage(); err != nil {
 			break

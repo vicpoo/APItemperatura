@@ -1,53 +1,47 @@
-// main.go
 package main
 
 import (
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gorilla/websocket"
 	"github.com/vicpoo/APItemperatura/Temperatura/infrastructure"
 )
 
-// Middleware para manejar CORS (Cross-Origin Resource Sharing)
-func CORS() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		// Permitir solicitudes desde cualquier origen (CORS)
-		c.Header("Access-Control-Allow-Origin", "*")
-		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization")
-
-		// Si es una solicitud OPTIONS, responder inmediatamente
-		if c.Request.Method == "OPTIONS" {
-			c.AbortWithStatus(204)
-			return
-		}
-
-		// Continuar con la siguiente función en la pila de middlewares
-		c.Next()
-	}
-}
-
-// Middleware para registrar las solicitudes entrantes
-func Logger() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		log.Printf("Request: %s %s", c.Request.Method, c.Request.URL.Path)
-		// Llamar a la siguiente función en la pila
-		c.Next()
-	}
+// Configurar WebSocket sin restricciones
+var upgrader = websocket.Upgrader{
+	CheckOrigin: func(r *http.Request) bool {
+		return true // Acepta conexiones desde cualquier origen
+	},
 }
 
 func main() {
 	// Configurar Gin
 	r := gin.Default()
 
-	// Agregar los middlewares globalmente
-	r.Use(CORS())   // Middleware para manejar CORS
-	r.Use(Logger()) // Middleware para registrar las solicitudes
+	// Configuración CORS más completa
+	r.Use(func(c *gin.Context) {
+		c.Header("Access-Control-Allow-Origin", "*")
+		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, Origin")
+		c.Header("Access-Control-Allow-Credentials", "true")
 
-	// Inicializar el hub de WebSocket y el consumidor
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(204)
+			return
+		}
+
+		// Logger incorporado
+		log.Printf("Request: %s %s", c.Request.Method, c.Request.URL.Path)
+
+		c.Next()
+	})
+
+	// Inicializar el hub de WebSocket
 	hub := infrastructure.NewHub()
 	go hub.Run()
 
@@ -58,7 +52,7 @@ func main() {
 	// Configurar rutas
 	infrastructure.SetupRoutes(r, hub)
 
-	// Iniciar consumidor de RabbitMQ para temperatura
+	// Iniciar consumidor de RabbitMQ para mensajes de temperatura
 	if err := messagingService.ConsumeTemperatureMessages(); err != nil {
 		log.Fatalf("Failed to start RabbitMQ consumer: %v", err)
 	}
